@@ -1,7 +1,11 @@
 OLD  := MMult_cuBLAS_1
-#NEW  := MMult_cuBLAS_1
-NEW := MMult_cuda_12
-SMS ?= 70 75 80 86
+# OLD  := MMult_cuda_1
+
+# NEW  := MMult_cuBLAS_2
+NEW := MMult_cuda_2
+SMS ?= 50 
+$(warning 111111)   
+$(warning $(BLAS_LIB))   
 
 #
 # sample makefile
@@ -33,16 +37,18 @@ all:
 	make clean;
 	make test_MMult.x
 
+
+
 test_MMult.x: $(TEST_OBJS) $(UTIL) parameters.h
 	$(LINKER) $(TEST_OBJS) $(UTIL) $(LDFLAGS) \
-        $(BLAS_LIB) -o $(TEST_BIN) $@ 
+        -o $@ 
 
-run:	
-	make all
-	echo "version = '$(NEW)';" > output_$(NEW).m
-	./test_MMult.x >> output_$(NEW).m
-	cp output_$(OLD).m output_old.m
-	cp output_$(NEW).m output_new.m
+# run:	
+# 	make all
+# 	echo "version = '$(NEW)';" > output_$(NEW).m
+# 	./test_MMult.x >> output_$(NEW).m
+# 	cp output_$(OLD).m output_old.m
+# 	cp output_$(NEW).m output_new.m
 
 clean:
 	rm -f *.o *~ core *.x

@@ -1,26 +1,109 @@
 #include <stdio.h>
-// #include <malloc.h>
-#include "parameters.h"
 #include <stdlib.h>
 #include <string.h>
-
+#include <numeric>
+#include <vector>
+#include <cassert>
+#include <memory>
 // CUDA runtime
-#include "helper.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
-void REF_MMult(int, int, int, float *, int, float *, int, float *, int);
-void MY_MMult(cublasHandle_t, int, int, int, float *, int, float *, int,
-              float *, int);
-void copy_matrix(int, int, float *, int, float *, int);
-void random_matrix(int, int, float *, int);
-float compare_matrices(int, int, float *, int, float *, int);
+constexpr m =1024,n=1024,k=1024;
 
-double dclock();
+// struct Tensor{
+//   enum type{
+//     cpu,
+//     gpu
+//   }
+//   type t;
+//   float* data; 
 
-int main() {
-  // print gpu info
-  cudaDeviceProp deviceProp;
+//   Tensor(std::vector<float>){
+
+//   }
+// }
+
+struct Matrix2D
+{
+public:
+  std::vector<size_t> shape;
+  std::vector<float> data;
+
+  Matrix2D(const std::vector<size_t> shape)
+  {
+    assert(shape.size() == 2);
+    this->shape = shape;
+    size_t len = 1;
+    for (auto i : shape)
+    {
+      len *= i;
+    }
+    data = std::vector<float>(float(0), len);
+  }
+  Matrix2D(const std::vector<size_t> shape, const std::vector<float> data)
+  {
+    this->shape = shape;
+    this->data = data;
+  }
+  Matrix2D(const Matrix2D& m){
+    this->shape = m.shape;
+    this->data = m.data;
+  }
+  auto random()
+  {
+    assert(shape.size() == 2);
+    for (auto i = 0; i < shape[0]; ++i)
+    {
+      for (auto j = 0; j < shape[0]; ++j)
+      {
+        this->at(i, j) = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+      }
+    }
+    return *this;
+  }
+  float& at(size_t x, size_t y) 
+  {
+    return data[x * y + y];
+  }
+
+  float compare(Matrix2D& m)
+  {
+    float max_diff = 0.0, diff; 
+    for(size_t i=0;i<shape.size();++i){
+      assert(shape[i]==m.shape[i]);
+    }
+    for (auto i = 0; i < shape[0]; ++i)
+    {
+      for (auto j = 0; j < shape[0]; ++j)
+      {
+        diff = this->at(i, j) - m.at(i, j);
+      }
+    }
+    return max_diff;
+  }
+  auto get_device_data(){
+    std::shared_ptr<float[]> dev_ptr(new float[data.size()]);
+    checkCudaErrors(cudaMalloc((void **)&dev_ptr.get(), data.size()));
+    checkCudaErrors(cudaMemcpy(dev_ptr.get(), data.data(), data.size(), cudaMemcpyHostToDevice));
+    return dev_ptr;
+  }
+};
+
+
+
+
+double dclock() {
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+
+  return 1000000 * tv.tv_sec+ tv.tv_usec;
+}
+
+void printGpuInfo(){
+    cudaDeviceProp deviceProp;
   int devID = 0;
   checkCudaErrors(cudaSetDevice(devID));
   auto error = cudaGetDeviceProperties(&deviceProp, devID);
@@ -31,118 +114,22 @@ int main() {
   }
   printf("GPU Device %d: \"%s\" with compute capability %d.%d\n\n", devID,
          deviceProp.name, deviceProp.major, deviceProp.minor);
+}
 
-  int p, m, n, k, lda, ldb, ldc, rep;
-
-  double dtime, dtime_best, gflops, diff;
-
-  float *a, *b, *c, *cref, *cold;
-
-  printf("MY_MMult = [\n");
-
-  cublasHandle_t handle;
-  checkCudaErrors(cublasCreate(&handle));
-  // checkCudaErrors(cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH));
-
-  /* Time the "optimized" implementation */
-  cudaEvent_t start, stop;
-  // Allocate CUDA events that we'll use for timing
+int main(){
+  printGpuInfo();
+  gflops = 2.0 * m * n * k * 1.0e-09;  
+  
+cudaEvent_t start, stop;
   checkCudaErrors(cudaEventCreate(&start));
   checkCudaErrors(cudaEventCreate(&stop));
 
-  // printf( "create Handle\n");
+  cublasHandle_t handle;
+  checkCudaErrors(cublasCreate(&handle));
 
-  for (p = PFIRST; p <= PLAST; p += PINC) {
-    m = (M == -1 ? p : M);
-    n = (N == -1 ? p : N);
-    k = (K == -1 ? p : K);
+  Matrix2D a = Matrix2D({m,k}).random();
+  Matrix2D b = Matrix2D({k,n}).random();  
+  Matrix2D c = Matrix2D({m,n}).random(); 
 
-    gflops = 2.0 * m * n * k * 1.0e-09;
 
-    lda = (LDA == -1 ? m : LDA);
-    ldb = (LDB == -1 ? k : LDB);
-    ldc = (LDC == -1 ? m : LDC);
-
-    /* Allocate space for the matrices */
-    /* Note: I create an extra column in A to make sure that
-       prefetching beyond the matrix does not cause a segfault */
-    const size_t mem_size_A = lda * (k + 1) * sizeof(float);
-    const size_t mem_size_B = ldb * n * sizeof(float);
-    const size_t mem_size_C = ldc * n * sizeof(float);
-    a = (float *)malloc(mem_size_A);
-    b = (float *)malloc(mem_size_B);
-    c = (float *)malloc(mem_size_C);
-    cold = (float *)malloc(mem_size_C);
-    cref = (float *)malloc(mem_size_C);
-
-    /* Generate random matrices A, B, Cold */
-    random_matrix(m, k, a, lda);
-    random_matrix(k, n, b, ldb);
-    random_matrix(m, n, cold, ldc);
-    memset(cold, 0, mem_size_C);
-    memset(cref, 0, mem_size_C);
-
-    /* Init device matrix*/
-    float *d_A, *d_B, *d_C;
-    checkCudaErrors(cudaMalloc((void **)&d_A, mem_size_A));
-    checkCudaErrors(cudaMalloc((void **)&d_B, mem_size_B));
-    checkCudaErrors(cudaMemcpy(d_A, a, mem_size_A, cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMemcpy(d_B, b, mem_size_B, cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMalloc((void **)&d_C, mem_size_C));
-
-    /* Run the reference implementation so the answers can be compared */
-    // printf( "init\n");
-
-    REF_MMult(m, n, k, a, lda, b, ldb, cref, ldc);
-    // printf( "benchmark\n");
-
-    // Record the start event
-    checkCudaErrors(cudaEventRecord(start, NULL));
-
-    for (rep = 0; rep < NREPEATS; rep++) {
-      /* Time your implementation */
-      MY_MMult(handle, m, n, k, d_A, lda, d_B, ldb, d_C, ldc);
-    }
-
-    // printf( "mymmult\n");
-
-    // Record the stop event
-    checkCudaErrors(cudaEventRecord(stop, NULL));
-    // Wait for the stop event to complete
-    checkCudaErrors(cudaEventSynchronize(stop));
-    float msecTotal = 0.0f;
-    checkCudaErrors(cudaEventElapsedTime(&msecTotal, start, stop));
-
-    // Compute and print the performance
-    float msecPerMatrixMul = msecTotal / NREPEATS;
-    double flopsPerMatrixMul = 2.0 * m * k * n;
-    double gflops =
-        (flopsPerMatrixMul * 1.0e-9f) / (msecPerMatrixMul / 1000.0f);
-
-    // copy result from device to host
-    checkCudaErrors(cudaMemcpy(cold, d_C, mem_size_C, cudaMemcpyDeviceToHost));
-
-    diff = compare_matrices(m, n, cold, ldc, cref, ldc);
-    if (diff > 0.5f || diff < -0.5f) {
-      printf("diff too big !\n");
-      exit(-1);
-    }
-    printf("%d %.2f %le \n", p, gflops, diff);
-
-    free(a);
-    free(b);
-    free(c);
-    free(cold);
-    free(cref);
-
-    checkCudaErrors(cudaFree(d_A));
-    checkCudaErrors(cudaFree(d_B));
-    checkCudaErrors(cudaFree(d_C));
-  }
-
-  // Destroy the handle
-  checkCudaErrors(cublasDestroy(handle));
-
-  printf("];\n");
-  return 0;
 }
