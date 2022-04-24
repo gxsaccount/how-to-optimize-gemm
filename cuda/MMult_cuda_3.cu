@@ -21,7 +21,7 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
   float *begin_b = b + bx * BLOCK;
   float *end_a = begin_a + k;
 
-  float sum = 0.f;
+  float sum = 0 .f;
   for (float *a_ptr = begin_a, *b_ptr = begin_b; a_ptr < end_a;
        a_ptr += BLOCK, b_ptr += BLOCK * n) {
     __shared__ float ashare[BLOCK][BLOCK];
@@ -31,7 +31,7 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     bshare[ty][tx] = b_ptr[ty * n + tx];
     __syncthreads();
 
-#pragma unroll
+// #pragma unroll
     for (int kk = 0; kk < BLOCK; ++kk) {
       sum += ashare[ty][kk] * bshare[kk][tx];
     }

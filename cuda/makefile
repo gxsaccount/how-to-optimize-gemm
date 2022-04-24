@@ -1,7 +1,12 @@
 OLD  := MMult_cuda_1
 #NEW  := MMult_cuBLAS_1
+<<<<<<< HEAD
 NEW := MMult_cuda_3
 SMS ?= 50  70 75 80 86
+=======
+NEW := MMult_cuda_2
+SMS ?= 70 75 80 86
+>>>>>>> f0f75839da9e6ff6b1e0c52effff9ff0029b77a6
 
 #
 # sample makefile
@@ -11,7 +16,7 @@ CC         := nvcc
 LINKER     := $(CC)
 #CFLAGS     := -O0 -g -Wall
 $(foreach sm,$(SMS),$(eval GENCODE_FLAGS += -gencode arch=compute_$(sm),code=sm_$(sm)))
-CFLAGS     := -std=c++17 -O2 -g
+CFLAGS     := -std=c++17 -O2 -g -G
 LDFLAGS    := -lm  -lcublas  -lopenblas
 
 UTIL       := copy_matrix.o \
