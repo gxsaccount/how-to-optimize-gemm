@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #define A(i, j) a[(j)*lda + (i)]
+extern double drand48();
 
 void random_matrix(int m, int n, float *a, int lda) {
   double drand48();

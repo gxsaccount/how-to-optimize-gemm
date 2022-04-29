@@ -7,7 +7,7 @@
 #include <cuda_runtime.h>
 
 /**
- * naive 实现
+ * naive 实现，tilling without share mem 
  */
  
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,

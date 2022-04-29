@@ -7,7 +7,7 @@
 #include <cuda_runtime.h>
 
 /**
- * 
+ * https://blog.csdn.net/DUBO160/article/details/45154673
  */
  
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
