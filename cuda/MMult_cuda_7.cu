@@ -6,6 +6,9 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
+/*
+内存访问效率不高，需要更好的分块策略 + 代码实现
+*/
 // a = mxk, b = kxn
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                       float *c, int ldc) {

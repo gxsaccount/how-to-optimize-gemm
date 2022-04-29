@@ -16,6 +16,7 @@
  * 和 version4 的区别：
  * 1. 修改了分块尺寸
  * 2. 每个 block 有 8x8 个线程，每个线程计算 4x4 个结果
+ * 3. ashare 变量的地址，对齐到 16K
  */
 template <int BLOCK, int STRIDE>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,

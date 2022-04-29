@@ -5,7 +5,9 @@
 #include "helper.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
-
+/*
+ ping-pong ,效果不佳
+*/
 // a = mxk, b = kxn
 template <int BLOCK, int STRIDE>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,

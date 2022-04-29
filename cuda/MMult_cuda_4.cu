@@ -6,6 +6,9 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
+/* 
+不要每个 thread 只计算 1 个结果，改成每次计算 STRIDE x STRIDE 个
+*/
 // a = mxk, b = kxn
 template <int BLOCK, int STRIDE>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
@@ -37,7 +40,7 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     }
     __syncthreads();
 
-#pragma unroll
+// #pragma unroll
     for (int i = 0; i < STRIDE; ++i) {
       for (int j = 0; j < STRIDE; ++j) {
         for (int kk = 0; kk < STEP; ++kk) {
