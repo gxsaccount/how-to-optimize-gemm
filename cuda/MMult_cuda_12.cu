@@ -15,6 +15,8 @@
 #define SMEM_LDB (128)
 #define SMEM_LDC (64)
 
+
+
 // remove original guard
 __device__ __forceinline__ void ldg32_nc_0(float &reg, const void *ptr) {
   asm volatile("{.reg .pred p;\n"
@@ -113,6 +115,8 @@ __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
   {
 // load first
 // load gmem to smem for ashare
+//Ampere之前，是不存在Gmem->L2->Smem的这一直接路径的，需要先读入寄存器再写进Smem，是Gmem->L2->L1->RF->Smem
+
 #pragma unroll
     for (int i = 0; i < 4; ++i) {
       ldg32_nc_0(a_ldg_reg[i],

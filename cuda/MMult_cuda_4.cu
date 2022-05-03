@@ -8,7 +8,11 @@
 
 /* 
 不要每个 thread 只计算 1 个结果，改成每次计算 STRIDE x STRIDE 个
-*/
+为啥要在一个thread算stride*stride之后再搞2*2 * 4*4呀？直接把stride值变大一点不就好了吗？ 
+消除读shm的bank conflict  
+
+寄存器的bank conflict发生在指令内，shared memory的bank conflict发生在warp内
+*/  
 // a = mxk, b = kxn
 template <int BLOCK, int STRIDE>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
