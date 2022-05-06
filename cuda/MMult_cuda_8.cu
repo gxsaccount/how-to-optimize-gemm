@@ -28,39 +28,37 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
   float sum[STRIDE][STRIDE] = {0.f};
   float *a_ptr = begin_a, *b_ptr = begin_b;
 
-#define LOAD(IDX)                                                              \
-  do {                                                                         \
-    for (int i = 0; i < STRIDE; ++i) {                                         \
-      for (int j = 0; j < STRIDE; ++j) {                                       \
-        ashare[IDX][ty + i][tx + j] = a_ptr[(ty + i) * k + tx + j];            \
-        bshare[IDX][ty + i][tx + j] = b_ptr[(ty + i) * n + tx + j];            \
-      }                                                                        \
-    }                                                                          \
-    a_ptr += STEP, b_ptr += STEP * n;                                          \
-  } while (0);
+  auto load = [&](int idx){                                                                      
+      for (int i = 0; i < STRIDE; ++i) {                                         
+        for (int j = 0; j < STRIDE; ++j) {                                       
+          ashare[idx][ty + i][tx + j] = a_ptr[(ty + i) * k + tx + j];            
+          bshare[idx][ty + i][tx + j] = b_ptr[(ty + i) * n + tx + j];            
+        }                                                                        
+      }                                                                          
+      a_ptr += STEP, b_ptr += STEP * n;                                          
+  };
 
-#define SUBKERNEL(IDX)                                                         \
-  for (int i = 0; i < STRIDE; ++i) {                                           \
-    for (int j = 0; j < STRIDE; ++j) {                                         \
-      for (int kk = 0; kk < STEP; ++kk) {                                      \
-        sum[i][j] += ashare[IDX][ty + i][kk] * bshare[IDX][kk][tx + j];        \
-      }                                                                        \
-    }                                                                          \
-  }
-
-  LOAD(0)
+  auto subkernal = [&](int idx){
+    for (int i = 0; i < STRIDE; ++i) {                                           
+      for (int j = 0; j < STRIDE; ++j) {                                         
+        for (int kk = 0; kk < STEP; ++kk) {                                      
+          sum[i][j] += ashare[idx][ty + i][kk] * bshare[idx][kk][tx + j];        
+        }                                                                        
+      }                                                                          
+    }
+  };
+  load(0);
   for (; a_ptr < end_a;) {
     __syncthreads();
-    LOAD(1)
-    SUBKERNEL(0)
+    load(1);
+    subkernal(0);
 
     __syncthreads();
     if (a_ptr < end_a) {
-      LOAD(0)
+      load(0);
     }
-    SUBKERNEL(1)
-  }
-
+    subkernal(1);
+  }  
 #pragma unroll
   for (int i = 0; i < STRIDE; ++i) {
     for (int j = 0; j < STRIDE; ++j) {

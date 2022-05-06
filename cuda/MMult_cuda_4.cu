@@ -27,13 +27,12 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
   float *begin_a = a + by * STEP * k;
   float *begin_b = b + bx * STEP;
   float *end_a = begin_a + k;
-
+  __shared__ float ashare[STEP][STEP];
+  __shared__ float bshare[STEP][STEP];
   float sum[STRIDE][STRIDE] = {0.f};
-  for (float *a_ptr = begin_a, *b_ptr = begin_b; a_ptr < end_a;
-       a_ptr += STEP, b_ptr += STEP * n) {
-    __shared__ float ashare[STEP][STEP];
-    __shared__ float bshare[STEP][STEP];
-
+  float *a_ptr = begin_a, *b_ptr = begin_b;
+  
+  auto load = [&](){ 
     for (int i = 0; i < STRIDE; ++i) {
       for (int j = 0; j < STRIDE; ++j) {
         ashare[ty * STRIDE + i][tx * STRIDE + j] =
@@ -42,9 +41,10 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
             b_ptr[(ty * STRIDE + i) * n + tx * STRIDE + j];
       }
     }
-    __syncthreads();
+    a_ptr += STEP, b_ptr += STEP * n;
+  };
 
-// #pragma unroll
+  auto subkernal = [&](){
     for (int i = 0; i < STRIDE; ++i) {
       for (int j = 0; j < STRIDE; ++j) {
         for (int kk = 0; kk < STEP; ++kk) {
@@ -53,7 +53,12 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
         }
       }
     }
+  };
 
+  for (; a_ptr < end_a;) {
+    load();
+    __syncthreads();
+    subkernal();
     __syncthreads();
   }
 
