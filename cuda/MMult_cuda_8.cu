@@ -6,7 +6,7 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 /*
- ping-pong ,效果不佳
+ ping-pong ,效果不佳,load和subkernal不能很好的掩盖延迟
 */
 // a = mxk, b = kxn
 template <int BLOCK, int STRIDE>
