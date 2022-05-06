@@ -10,7 +10,9 @@
 /*
 naive 版每个 thread 都在做 global_mem -------> reg 的超远距离（473 cycle 延迟）搬运，第二版本使用 __shared__ 声明静态 share_memory ， preload 16x16 小块的正方形，多个 thread 共用，少 load gmem。
 
-这个动作很好理解，类似于 CPU 切分 M 维，把一部分 A 矩阵送进 L2cache 
+https://zhuanlan.zhihu.com/p/342103911  
+
+将矩阵分块，读到share_mem的块会被访问多次（减少global_mem的次数）
 */
 // a = mxk, b = kxn
 template <int BLOCK>
