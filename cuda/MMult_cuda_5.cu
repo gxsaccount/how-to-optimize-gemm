@@ -31,12 +31,13 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
   float *begin_a = a + by * k;
   float *begin_b = b + bx;
   float *end_a = begin_a + k;
-
+  __shared__ __align__(16 * 1024) float ashare[STEP][STEP];
+  __shared__ __align__(16 * 1024) float bshare[STEP][STEP];
+  
   float sum[STRIDE][STRIDE] = {0.f};
   for (float *a_ptr = begin_a, *b_ptr = begin_b; a_ptr < end_a;
        a_ptr += STEP, b_ptr += STEP * n) {
-    __shared__ __align__(16 * 1024) float ashare[STEP][STEP];
-    __shared__ __align__(16 * 1024) float bshare[STEP][STEP];
+
 
     for (int i = 0; i < STRIDE; ++i) {
       for (int j = 0; j < STRIDE; ++j) {

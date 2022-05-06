@@ -7,7 +7,11 @@
 #include <cuda_runtime.h>
 
 /*
-内存访问效率不高，需要更好的分块策略 + 代码实现
+基于4修改
+
+内存访问效率不高，需要更好的分块策略 + 代码实现 
+https://zhuanlan.zhihu.com/p/410278370 
+MMult_cuda_7 尝试实现小抄描述的 2x2 。每个 block 计算 128x128 大小的正方形，这个正方形又可以切成 2x2 个 64x64 正方形。“最终单个线程计算 2x2 个 4x4 的结果”。
 */
 // a = mxk, b = kxn
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,

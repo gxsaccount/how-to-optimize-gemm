@@ -6,6 +6,8 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 /*
+基于4修改
+MMult_cuda_8 尝试实现小抄所说的“延迟隐藏”。说白了就是 ping-pong，不要 load 到 smem 立马就 __syncthreads()，而是 load0、cal1、sync、load1、cal0... 
  ping-pong ,效果不佳,load和subkernal不能很好的掩盖延迟
 */
 // a = mxk, b = kxn

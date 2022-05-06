@@ -18,6 +18,7 @@
 // ];
 
 /**
+ * https://github.com/Yinghan-Li/YHs_Sample/tree/master/cuda/gemm
  * version 9 的特点是 gmem->smem 过程中用了 GPU 喜欢 interleave 的特性。
  *
  * 标准的 GEMM 里 matrixA 是要 transpose 的，thread 加载 gmem 的 4行1列
@@ -26,6 +27,30 @@
  * matrixB 不 tranpose，就是单纯的加载。32 thread 合并访问。 thread i 访问  [i,
  * i+32, i+64, i+96]
  *
+
+
+ 一、合并访问和 transpose A
+
+还记得 GPU 线程调度单位是 32 么？在 CUDA 中叫做 Warp，俗称“线程束”。CPU SIMD 的思考单位是线程，  
+而 GPU 每次都要想“32 个线程一起执行怎么怎么样”。
+
+当 32 个 thread 一起加载数据，从 gmem 搬到 smem 时，interleave 的方式是更受欢迎的，  
+也就是 i 号线程访问 i 号数据。这点和 CPU kernel 不同，CPU 不喜欢处理 interleave。  
+因为要上下文切换，CPU 希望每个线程的数据加载是连续的、相对独立的。   
+这种方式叫做合并访问（coalesced），  
+stackoverflow https://stackoverflow.com/questions/5041328/in-cuda-what-is-memory-coalescing-and-how-is-it-achieved  
+ 解释得比较好，请淆！
+
+
+ 二、smem 开发技巧
+
+smem 改成了类似“池”的概念，一次分配 24K，ashare、bshare 从里面切。这样可以反复利用，不用一次性定义几个变量。
+
+三、panel
+
+因为 tranposeA 的尺度是 4，每次计算 2x2 个 4x4 结果，不连续。从 smem 到寄存器这步使用了 panelA 和 panelB 装载待计算的数据，两个 for 循环算完。否则就要写 2x2x4x4 这种四层 for 循环。
+
+这么做是为了让更细粒度的 ping-pong 好写一点，并非性能有差别。你知道的，代码越 repeat your self 越容易出 bug。
  */
 __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
                                                           const float *a,
@@ -39,23 +64,23 @@ __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
       reinterpret_cast<float *>(smem + 16 * 1024); // 8k shared mem for B
   float sum[8][8] = {0};
   float panelA[8] = {0}, panelB[8] = {0};
-
+//start1 根据 coalesced 原理，subB 矩阵 8x128 的加载改成了 interleave32，thread_i 要取 i, i+32, i+64, i+96 这四个数据。
   int from_a = (blockIdx.y * 128 + threadIdx.x / 8 * 4) * k + threadIdx.x % 8;
   int from_b = (threadIdx.x / 32) * n + blockIdx.x * 128 + threadIdx.x % 32;
-
+  // 128x8 大小的 subA，从 gmem 运到 smem 时，偷偷做了 transpose，每个 thread 把 4 行 1 列转成 1 行。毕竟 trans(A) 才是内存连续的嘛
   for (int loop = 0; loop < k; loop += 8) {
     // part1: gmem to smem
     // load gmem to smem for ashare
     int to_a = (threadIdx.x % 8) * SMEM_LDA +
                (threadIdx.x / 8) * 4; // 连续的地址不能给同一个 thread 用
-#pragma unroll
+
     for (int i = 0; i < 4; ++i) {
       ashare[to_a + i] = a[from_a + i * k];
     }
 
     // load gmem to smem for bshare
     int to_b = (threadIdx.x / 32) * SMEM_LDB + (threadIdx.x % 32);
-#pragma unroll
+
     for (int i = 0; i < 4; ++i) {
       bshare[to_b + i * 32] =
           b[from_b + i * 32]; // 32 thread 合并访问。 thread i 访问  [i, i+32,
@@ -70,26 +95,26 @@ __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
     // 计算 2x2 个 4x4
     int aidx0 = (threadIdx.x / 16) * 4;
     int bidx0 = (threadIdx.x % 16) * 4;
-#pragma unroll
+
     for (int subk = 0; subk < 8; ++subk) {
       float *ptrA = ashare + aidx0 + subk * SMEM_LDA;
 
-#pragma unroll
+
       for (int i = 0; i < 4; ++i) {
         panelA[i] = ptrA[i];
         panelA[i + 4] = ptrA[i + 64];
       }
 
       const float *ptrB = bshare + bidx0 + subk * SMEM_LDB;
-#pragma unroll
+
       for (int i = 0; i < 4; ++i) {
         panelB[i] = ptrB[i];
         panelB[i + 4] = ptrB[i + 64];
       }
 
-#pragma unroll
+
       for (int i = 0; i < 8; ++i) {
-#pragma unroll
+
         for (int j = 0; j < 8; ++j) {
           sum[i][j] += panelA[i] * panelB[j];
         }
@@ -101,7 +126,7 @@ __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
   // part3: save to C
   int write_offset = (blockIdx.y * 128 + (threadIdx.x / 16) * 4) * n +
                      blockIdx.x * 128 + (threadIdx.x % 16) * 4;
-#pragma unroll
+
   for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < 4; ++j) {
       c[write_offset + i * n + j] = sum[i][j];
