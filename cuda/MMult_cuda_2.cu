@@ -14,21 +14,20 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                       float *c, int ldc) {
   int _m = blockIdx.x * blockDim.x + threadIdx.x;
   int _n = blockIdx.y * blockDim.y + threadIdx.y;
-  if (_m < m and _n < n) {
+  if (_m >= m and _n >= n) return;
     float sum = 0.f;
     for (int i = 0; i < k; ++i) {
       sum += a[_m * k + i] * b[i * n + _n];
     }
     c[_m * n + _n] = sum;
-  }
 }
 
 void MY_MMult(cublasHandle_t handle, int m, int n, int k, float *d_A, int lda,
               float *d_B, int ldb, float *d_C, int ldc) {
 
-  constexpr int BLOCK = 16;
+  constexpr int BLOCK = 16; 
   // subm, subn, subk
-  dim3 block(BLOCK, BLOCK);
+  dim3 block(BLOCK, BLOCK);////最大线程数是512或者1024
   dim3 grid((m + BLOCK - 1) / BLOCK, (n + BLOCK - 1) / BLOCK);
 
   sgemm<<<grid, block>>>(m, n, k, d_A, lda, d_B, ldb, d_C, ldc);
