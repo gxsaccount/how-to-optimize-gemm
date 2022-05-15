@@ -6,6 +6,15 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
+
+/**
+ * 一个线程计算a的一行与b的一列相乘，
+ * 每个block计算c(mxn)上坐标为[_m，_n]的结果,1维坐标是[_m*n+_n]，
+ * 对应a的[_m，...]一维：[_m * k :_m * k+k ：1]，
+ * 与b的[...，_n],一维： [ _n    ：k*n+_n  : n]，  
+ */
+
+
 template <int BLOCK>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                       float *c, int ldc) {

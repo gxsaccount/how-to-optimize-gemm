@@ -1,6 +1,6 @@
 OLD  := MMult_cuBLAS_1
 # NEW  := MMult_cuBLAS_1
-NEW := MMult_cuda_9_1
+NEW := MMult_cuda_2_3
 SMS ?= 50  70 75 80 86
 #
 # sample makefile

@@ -15,6 +15,9 @@ https://zhuanlan.zhihu.com/p/342103911
 将矩阵分块，读到share_mem的块会被访问多次（减少global_mem的次数）
 */
 // a = mxk, b = kxn
+
+#define IF_       if(blockIdx.x ==2 and blockIdx.y ==0 and  threadIdx.x==0 and threadIdx.y==0 and threadIdx.z==0)
+ 
 template <int BLOCK>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                       float *c, int ldc) {
@@ -25,18 +28,19 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
   const int bx = blockIdx.x;
   const int by = blockIdx.y;
 
-  float *begin_a = a + by * BLOCK * k;
-  float *begin_b = b + bx * BLOCK;
-  float *end_a = begin_a + k;
-
+  float *a_ptr = a + by * BLOCK * k+ty * k + tx;
+  float *b_ptr = b + bx * BLOCK + ty * n + tx;
+  float *end_a = a_ptr + k;
   float sum = 0.f;
-  for (float *a_ptr = begin_a, *b_ptr = begin_b; a_ptr < end_a;
+IF_ 
+printf("a:%d, b:%d, c:%d\n",by * BLOCK * k+ty * k + tx,bx * BLOCK + ty * n + tx,(BLOCK * by + ty) * n + BLOCK * bx + tx);
+  for (; a_ptr < end_a;
        a_ptr += BLOCK, b_ptr += BLOCK * n) {
     __shared__ float ashare[BLOCK][BLOCK];
     __shared__ float bshare[BLOCK][BLOCK];
 
-    ashare[ty][tx] = a_ptr[ty * k + tx];
-    bshare[ty][tx] = b_ptr[ty * n + tx];
+    ashare[ty][tx] = *a_ptr;
+    bshare[ty][tx] = *b_ptr;
     __syncthreads();
 
 // #pragma unroll
