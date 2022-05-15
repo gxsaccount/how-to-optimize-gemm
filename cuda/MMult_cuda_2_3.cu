@@ -43,10 +43,10 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     int _n = (blockIdx.y * blockDim.y + threadIdx.y) * STRIDE ; // clumn of c[0]
     // IF_
     // printf("m:%d,n:%d\n",_m,_n);
-    float *a_ptr = a + _m * k ;                 // a: row=_m , column = ty
-    float *b_ptr = b + _n ;                 // b: row= tx  column = _n
+    float *a_ptr = a + _m * k + ty * STRIDE ;                 // a: row=_m , column = ty
+    float *b_ptr = b + _n + tx* STRIDE * n ;                 // b: row= tx  column = _n
     float *end_a = a + (_m * k + k);
-    float sum[STRIDE][STRIDE] = {0.f};
+   float sum[STRIDE][STRIDE] = {0.f};
     __shared__ float ashare[STEP][STEP];
     __shared__ float bshare[STEP][STEP];
  
@@ -65,14 +65,6 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                 bshare[tx * STRIDE + i][ty * STRIDE + j] =
                     b_ptr[i * n + j];
             }
-        }
-        IF_ 
-        for(int i=0;i<STEP;++i){
-            std::string str="";
-            for(int j = 0 ;j<STEP;++j){
-
-            }
-            printf("\n");
         }
         __syncthreads();
         //c[i][j]需要计算两次结果，对应a[tx][j] * b[i][ty],a[tx+1][j] * b[i][ty+1]  
