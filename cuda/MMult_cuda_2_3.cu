@@ -30,7 +30,7 @@ a[_m*k : _m*k+k : block]
 b[_n+x*k：k*n+_n  : block*n] 
 
 */
-#define IF_ if (blockIdx.x == 0 and blockIdx.y == 0 and threadIdx.x == 0 and threadIdx.y == 0 and threadIdx.z == 0)
+#define IF_ if (blockIdx.x == 0 and blockIdx.y == 0 and threadIdx.x == 1 and threadIdx.y == 0 and threadIdx.z == 0)
 
 template <int BLOCK, int STRIDE>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
@@ -41,8 +41,8 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     const int ty = threadIdx.y;
     int _m = (blockIdx.x * blockDim.x + threadIdx.x) * STRIDE ; // row of c[0]
     int _n = (blockIdx.y * blockDim.y + threadIdx.y) * STRIDE ; // clumn of c[0]
-    IF_
-    printf("m:%d,n:%d\n",_m,_n);
+    // IF_
+    // printf("m:%d,n:%d\n",_m,_n);
     float *a_ptr = a + _m * k ;                 // a: row=_m , column = ty
     float *b_ptr = b + _n ;                 // b: row= tx  column = _n
     float *end_a = a + (_m * k + k);
@@ -57,8 +57,8 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
         {
             for (int j = 0; j < STRIDE; ++j) // for column c[_n+j]
             {   
-                IF_
-                printf("a:%d,b:%d\n",_m * k + i * k + j,_n + i * n + j);
+                // IF_
+                // printf("th:[%d,%d]a:%d,b:%d\n",threadIdx,_m * k + i * k + j,_n + i * n + j);
 
                 ashare[tx * STRIDE + i][ty * STRIDE + j] =
                     a_ptr[i * k + j];
@@ -66,15 +66,26 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                     b_ptr[i * n + j];
             }
         }
-        
+        IF_ 
+        for(int i=0;i<STEP;++i){
+            std::string str="";
+            for(int j = 0 ;j<STEP;++j){
+
+            }
+            printf("\n");
+        }
         __syncthreads();
         //c[i][j]需要计算两次结果，对应a[tx][j] * b[i][ty],a[tx+1][j] * b[i][ty+1]  
         for (int i = 0; i < STRIDE; ++i)
         {
             for (int j = 0; j < STRIDE; ++j)
             {
-                for (int kk = 0; kk < STEP; ++kk) // a的列数增加，b的行数增加
+                for (int kk = 0; kk < STEP; ++kk){ // a的列数增加，b的行数增加
+                    // IF_ 
+                    // printf("sum[%d,%d] a:%f b:%f\n",i,j,ashare[tx * STRIDE + i][kk],bshare[kk][ty * STRIDE + j]); 
+
                     sum[i][j] += ashare[tx * STRIDE + i][kk] * bshare[kk][ty * STRIDE + j];
+                }
             }
         }
 
@@ -84,11 +95,8 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     {
         for (int j = 0; j < STRIDE; ++j)
         {
-            IF_
-            printf("c:%d sum:%f\n",(_m + i) * n + (_n + j),sum[i][j]);
-
-            if(sum[i][j]==0)
-            printf("(%d,%d),(%d,%d)\n",blockIdx.x,blockIdx.y,threadIdx.x,threadIdx.y);
+            // IF_
+            // printf("c:%d sum:%f\n",(_m + i) * n + (_n + j),sum[i][j]);
             c[(_m + i) * n + (_n + j)] = sum[i][j];
         }
     }
