@@ -45,7 +45,6 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
             b_ptr[(ty * STRIDE + i) * n + tx * STRIDE + j];
       }
     }
-    a_ptr += STEP, b_ptr += STEP * n;
   };
 
   auto subkernal = [&]()
@@ -63,7 +62,7 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     }
   };
 
-  for (; a_ptr < end_a;)
+  for (; a_ptr < end_a;a_ptr += STEP, b_ptr += STEP * n)
   {
     load();
     __syncthreads();

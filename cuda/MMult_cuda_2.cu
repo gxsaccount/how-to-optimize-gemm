@@ -7,7 +7,7 @@
 #include <cuda_runtime.h>
 
 /**
- * naive 实现，tilling without share mem
+ * naive 实现
  * 一个线程计算a的一行与b的一列相乘，
  * 计算c(mxn)上坐标为[_m，_n]的结果,1维坐标是[_m*n+_n]，
  * 对应a的[_m，...]一维：[_m * k :_m * k+k ：1]，
@@ -17,8 +17,12 @@ template <int BLOCK>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                       float *c, int ldc)
 {
-  int _m = blockIdx.x * blockDim.x + threadIdx.x;
-  int _n = blockIdx.y * blockDim.y + threadIdx.y;
+  const int tx = threadIdx.x;
+  const int ty = threadIdx.y;
+  const int bx = blockIdx.x;
+  const int by = blockIdx.y;
+  int _m = bx * blockDim.x + tx; // row of c
+  int _n = by * blockDim.y + ty; // clumn of c
   float *a_ptr = a + _m * k, *b_ptr = b + _n;
   float *end_a = a + (_m * k + k);
   float sum = 0.f;

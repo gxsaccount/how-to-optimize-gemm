@@ -118,6 +118,7 @@ int main() {
     double flopsPerMatrixMul = 2.0 * m * k * n;
     double gflops =
         (flopsPerMatrixMul * 1.0e-9f) / (msecPerMatrixMul / 1000.0f);
+    printf("%d %.2f %le \n", p, gflops, diff);
 
     // copy result from device to host
     checkCudaErrors(cudaMemcpy(cold, d_C, mem_size_C, cudaMemcpyDeviceToHost));
@@ -127,7 +128,6 @@ int main() {
       printf("diff too big !\n");
       exit(-1);
     }
-    printf("%d %.2f %le \n", p, gflops, diff);
 
     free(a);
     free(b);

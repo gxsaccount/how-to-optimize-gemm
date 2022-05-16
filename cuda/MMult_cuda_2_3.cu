@@ -7,91 +7,69 @@
 #include <cuda_runtime.h>
 
 /*
-不要每个 thread 只计算 1 个结果，改成每次计算 STRIDE x STRIDE 个
-为啥要在一个thread算stride*stride之后再搞2*2 * 4*4呀？直接把stride值变大一点不就好了吗？
-消除读shm的bank conflict
+tilling with share memory
 
-bank conflict 指的是当 同一个warp 里的 多个线程 对 同一个bank 发出访问请求，只能进行串行访问，
-极大影响了并行效率。 当bank conflict发生时，硬件将该访问请求拆分成多个conflict-free的请求，拆分出来的个数n，就说这个访问请求会引起 n-way bank conflicts
+https://zhuanlan.zhihu.com/p/342103911
 
-寄存器的bank conflict发生在指令内，shared memory的bank conflict发生在warp内
-
-一个线程计算2*2个c的元素
-c[_m,_n] c[_m+1][_n],c[_m][_n+1],c[_m+1][_n+1]
-一个线程一次for循环加载4个a，4个b，一共4*block个a，b  
-thread(x,y)的加载内容：  
-a[_m*k : _m*k+k : block] 
-b[_n+x*k：k*n+_n  : block*n] 
-a[(_m+1)*k : _m*k+k : block] 
-b[(_n+1)+x*k：k*n+_n  : block*n] 
-
-对于 c[_m,_n]，一个线程使用其中的2*block个a，b累加结果，即  
-a[_m*k : _m*k+k : block] 
-b[_n+x*k：k*n+_n  : block*n] 
+ * 一个block计算c上（16*16个结果）
+ * 一个c元素需要一行a（k个元素），一列b（k个元素）
+ * 所以在2.1中需要读取global_mem共计16*16*（k+k）次
+ * 在一个block中16*16的计算会有多次重复读取，例如a的第一行会读取16次。
+ * global_mem -> reg 的超远距离（473 cycle 延迟）搬运，非常耗时
+ * 为了减少global_mem的次数，所以引入share_mem
+ *
+ * 引入share_mem后，需要考虑一个block的线程如何工作
+ * 16*16的方阵c元素，只需要16行a元素，与16列b元素
+ * 每次取 各取BLOCK行a，各取BLOCK列b 
+ *
+ * 一个线程计算a的一行与b的一列相乘，
+ * 计算c(mxn)上坐标为[_m，_n]的结果,1维坐标是[_m*n+_n]，
+ * 对应a的[_m，...]一维：[_m * k :_m * k+k ：1]，
+ * 与b的[...，_n],一维： [ _n    ：k*n+_n  : n]，
+ *
+ * 每个线程每个循环负责load 1个a和1个b，共计a，b各16*16个
+ * 对应c上的结果+=他们的乘积和
+ * tx:行，ty：列
+ * （x，y）线程加载a[_m*k+y :_m * k+k ：block], b[_n+x*k：k*n+_n  : block*n]
+ * 分别对应a[_m,...] 与 b[...,_n] 
+ *  计算c[_m,_n]的结果
+ *
 
 */
-#define IF_ if (blockIdx.x == 0 and blockIdx.y == 0 and threadIdx.x == 1 and threadIdx.y == 0 and threadIdx.z == 0)
+// a = mxk, b = kxn
 
-template <int BLOCK, int STRIDE>
+#define IF_ if (blockIdx.x == 0 and blockIdx.y == 0 and threadIdx.x == 0 and threadIdx.y == 0 )
+
+template <int BLOCK>
 __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
                       float *c, int ldc)
 {
-    constexpr int STEP = BLOCK * STRIDE;
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
-    int _m = (blockIdx.x * blockDim.x + threadIdx.x) * STRIDE ; // row of c[0]
-    int _n = (blockIdx.y * blockDim.y + threadIdx.y) * STRIDE ; // clumn of c[0]
-    // IF_
-    // printf("m:%d,n:%d\n",_m,_n);
-    float *a_ptr = a + _m * k + ty * STRIDE ;                 // a: row=_m , column = ty
-    float *b_ptr = b + _n + tx* STRIDE * n ;                 // b: row= tx  column = _n
-    float *end_a = a + (_m * k + k);
-   float sum[STRIDE][STRIDE] = {0.f};
-    __shared__ float ashare[STEP][STEP];
-    __shared__ float bshare[STEP][STEP];
- 
+    const int bx = blockIdx.x;
+    const int by = blockIdx.y;
+    int _m = by * blockDim.y + ty; // row of c
+    int _n = bx * blockDim.y + tx; // clumn of c
+    float *a_ptr = a + _m * k + tx;                 // a: row=_m , column = ty
+    float *b_ptr = b + _n + ty * n ;                 // b: row= tx  column = _n
+    float *end_a = a_ptr + k;
+
+    float sum = 0.f;
+    __shared__ float ashare[BLOCK][BLOCK];
+    __shared__ float bshare[BLOCK][BLOCK];
     for (; a_ptr < end_a;
-         a_ptr += STEP, b_ptr += STEP * n)
+         a_ptr += BLOCK, b_ptr += BLOCK * n)
     {
-        for (int i = 0; i < STRIDE; ++i) // for row c[_m+i]
+        ashare[ty][tx] = *a_ptr;
+        bshare[ty][tx] = *b_ptr;
+        __syncthreads();
+        for (int kk = 0; kk < BLOCK; ++kk) // a的列数增加，b的行数增加
         {
-            for (int j = 0; j < STRIDE; ++j) // for column c[_n+j]
-            {   
-                // IF_
-                // printf("th:[%d,%d]a:%d,b:%d\n",threadIdx,_m * k + i * k + j,_n + i * n + j);
-
-                ashare[tx * STRIDE + i][ty * STRIDE + j] =
-                    a_ptr[i * k + j];
-                bshare[tx * STRIDE + i][ty * STRIDE + j] =
-                    b_ptr[i * n + j];
-            }
+            sum += ashare[ty][kk] * bshare[kk][tx];
         }
         __syncthreads();
-        //c[i][j]需要计算两次结果，对应a[tx][j] * b[i][ty],a[tx+1][j] * b[i][ty+1]  
-        for (int i = 0; i < STRIDE; ++i)
-        {
-            for (int j = 0; j < STRIDE; ++j)
-            {
-                for (int kk = 0; kk < STEP; ++kk){ // a的列数增加，b的行数增加
-                    // IF_ 
-                    // printf("sum[%d,%d] a:%f b:%f\n",i,j,ashare[tx * STRIDE + i][kk],bshare[kk][ty * STRIDE + j]); 
-
-                    sum[i][j] += ashare[tx * STRIDE + i][kk] * bshare[kk][ty * STRIDE + j];
-                }
-            }
-        }
-
-        __syncthreads();
     }
-    for (int i = 0; i < STRIDE; ++i)
-    {
-        for (int j = 0; j < STRIDE; ++j)
-        {
-            // IF_
-            // printf("c:%d sum:%f\n",(_m + i) * n + (_n + j),sum[i][j]);
-            c[(_m + i) * n + (_n + j)] = sum[i][j];
-        }
-    }
+    c[_m * n + _n] = sum;
 }
 
 void MY_MMult(cublasHandle_t handle, int m, int n, int k, float *d_A, int lda,
@@ -99,9 +77,7 @@ void MY_MMult(cublasHandle_t handle, int m, int n, int k, float *d_A, int lda,
 {
 
     constexpr int BLOCK = 16;
-    constexpr int STRIDE = 2; // every thread calc STRIDExSTRIDE result
-
     dim3 block(BLOCK, BLOCK);
-    dim3 grid((m + BLOCK - 1) / BLOCK / STRIDE, (n + BLOCK - 1) / BLOCK / STRIDE);
-    sgemm<BLOCK, STRIDE><<<grid, block>>>(m, n, k, d_A, lda, d_B, ldb, d_C, ldc);
+    dim3 grid((m + BLOCK - 1) / BLOCK, (n + BLOCK - 1) / BLOCK);
+    sgemm<BLOCK><<<grid, block>>>(m, n, k, d_A, lda, d_B, ldb, d_C, ldc);
 }

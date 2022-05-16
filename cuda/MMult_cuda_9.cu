@@ -84,61 +84,32 @@ k上的8*8的方阵，总共64个sum加上一个a*b
 
 #define SMEM_LDA (128)
 #define SMEM_LDB (128)
-// #define IF_       if(blockIdx.x ==0 and blockIdx.y ==0 and  threadIdx.x==255 and threadIdx.y==0 and threadIdx.z==0)
-#define IF_       if(threadIdx.x==1 and threadIdx.y==0 and threadIdx.z==0)
-
 __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
                                                           const float *a,
                                                           const float *b,
                                                           float *c) {
-
-  // __shared__ __align__(16 * 1024) char smem[24 * 1024]; // 16KB shared memory for buffer
-  // float *ashare = reinterpret_cast<float *>(smem);
-  // float *bshare =
-  //     reinterpret_cast<float *>(smem + 16 * 1024); // 8k shared mem for B
   __shared__ __align__(4 * 1024) float ashare[1024];
   __shared__ __align__(4 * 1024) float bshare[1024];
   float sum[8][8] = {0};
   float panelA[8] = {0}, panelB[8] = {0};
-
-  /*
-   
-  */
 //start1 根据 coalesced 原理，subB 矩阵 8x128 的加载改成了 interleave32，thread_i 要取 i, i+32, i+64, i+96 这四个数据。
   int from_a = (blockIdx.y * 128 + threadIdx.x / 8 * 4) * k + threadIdx.x % 8;
   int from_b = (threadIdx.x / 32) * n + blockIdx.x * 128 + threadIdx.x % 32;
-  // printf("Hello thread (bx: %d by: %d bz:%d),(tx: %d,ty:%d,tz:%d), from_a=%d from_b=%d\n", blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z, from_a,from_b) ;
-
   // 128x8 大小的 subA，从 gmem 运到 smem 时，偷偷做了 transpose，每个 thread 把 4 行 1 列转成 1 行。毕竟 trans(A) 才是内存连续的嘛
   for (int loop = 0; loop < k; loop += 8) {
     // part1: gmem to smem
-    // load gmem to smem for ashare
     int to_a = (threadIdx.x % 8) * SMEM_LDA +
                (threadIdx.x / 8) * 4; // 连续的地址不能给同一个 thread 用
-
-    // from_a =0; load a 0,512,1024,1536 => 二位坐标 (0,0) ,(1,0) ,(2,0),(3,0) 
     for (int i = 0; i < 4; ++i) {
       ashare[to_a + i] = a[from_a + i * k];
-      IF_ 
-      printf("b:(%d,%d,%d) t:(%d,%d,%d) from_a:(%d,%d) ashare:(%d)\n",\
-      blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z,\
-      (from_a + i * k)/m,(from_a + i * k)%m,to_a + i  \
-      );
     }
-
     // load gmem to smem for bshare
     int to_b = (threadIdx.x / 32) * SMEM_LDB + (threadIdx.x % 32);
-
     // from_b =0; load b 0,32,64,96 => 二位坐标 (0,0),(0,32),(0,64),(0,96)  
     for (int i = 0; i < 4; ++i) {
       bshare[to_b + i * 32] =
           b[from_b + i * 32]; // 32 thread 合并访问。 thread i 访问  [i, i+32,
                               // i+64, i+96]
-        IF_
-        printf("b:(%d,%d,%d) t:(%d,%d,%d) from_b:(%d,%d) bshare:(%d)\n",\
-        blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z,\
-        (from_b + i * 32)/n,(from_b + i * 32)%n,to_b + i * 32
-        );
     }
     __syncthreads();
     from_a += 8;
@@ -150,62 +121,31 @@ __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
     int bidx0 = (threadIdx.x % 16) * 4;
 
     for (int subk = 0; subk < 8; ++subk) {
-      // if(subk!=1) continue;
       float *ptrA = ashare + aidx0 + subk * SMEM_LDA;
-
-
       for (int i = 0; i < 4; ++i) {
-        // IF_ 
-        // printf("b:(%d,%d,%d) t:(%d,%d,%d) ashre:(%d)\n",\
-        blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z,\
-        aidx0 + subk * SMEM_LDA+i \
-        );
-
-        // IF_ 
-        // printf("b:(%d,%d,%d) t:(%d,%d,%d) ashre:(%d)\n",\
-        blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z,\
-        aidx0 + subk * SMEM_LDA+i+64  \
-        );
         panelA[i] = ptrA[i];
         panelA[i + 4] = ptrA[i + 64];
         
       }
-
       const float *ptrB = bshare + bidx0 + subk * SMEM_LDB;
-
       for (int i = 0; i < 4; ++i) {
         panelB[i] = ptrB[i];
         panelB[i + 4] = ptrB[i + 64];
       }
-
-
       for (int i = 0; i < 8; ++i) {
-
         for (int j = 0; j < 8; ++j) {
           sum[i][j] += panelA[i] * panelB[j];
-          // if(i==0 and j==0)
-          // IF_ 
-          // printf("b:(%d,%d,%d) t:(%d,%d,%d) sum[%d,%d]:%f\n",\
-          blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z,\
-          i,j,sum[i][j]);
         }
       }
     }
     __syncthreads();
   }
-
-
   // part3: save to C
   int write_offset = (blockIdx.y * 128 + (threadIdx.x / 16) * 4) * n +
                      blockIdx.x * 128 + (threadIdx.x % 16) * 4;
 
   for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < 4; ++j) {
-      // IF_
-      // printf("b:(%d,%d,%d) t:(%d,%d,%d) total sum[%d,%d]:%f  write in c[%d,%d]\n",\
-      blockIdx.x,blockIdx.y,blockIdx.z,threadIdx.x,threadIdx.y,threadIdx.z,\
-      i,j,sum[i][j],(write_offset + i * n + j)/k,(write_offset + i * n + j)%k);
-
       c[write_offset + i * n + j] = sum[i][j];
       c[write_offset + i * n + j + 64] = sum[i][j + 4];
       c[write_offset + (i + 64) * n + j] = sum[i + 4][j];
@@ -222,6 +162,5 @@ void MY_MMult(cublasHandle_t handle, int m, int n, int k, float *d_A, int lda,
 
   constexpr int BLOCK = 128;
   dim3 grid((m + BLOCK - 1) / BLOCK, (n + BLOCK - 1) / BLOCK);
-
   sgemm_128x128x8<<<grid, 256>>>(m, n, k, d_A, d_B, d_C);
 }
