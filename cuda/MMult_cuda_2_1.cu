@@ -26,7 +26,9 @@
 原因： 
 https://blog.csdn.net/kelvin_yan/article/details/53590597  
 cuda的（coalesced）合并访问  
-合并访问是指所有线程访问连续的对齐的内存块  
+所谓的 coalesced，是表示除了连续之外，而且它开始的地址，必须是每个 thread 所存取的大小的 16 倍。  
+例如，如果每个thread 都读取 32 bits 的数据，那么第一个 thread 读取的地址，必须是 16*4 = 64 bytes 的倍数  
+https://blog.csdn.net/Bruce_0712/article/details/65444997  
 
 CUDA 中的线程一次执行 32 个线程（warp）。  
 这 32 个线程（通常）以lockstep方式执行。  

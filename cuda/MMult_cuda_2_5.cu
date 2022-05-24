@@ -73,7 +73,6 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
             }
         }
         __syncthreads();
-        //c[i][j]需要计算两次结果，对应a[tx][j] * b[i][ty],a[tx+1][j] * b[i][ty+1]  
         for (int i = 0; i < STRIDE; ++i)
         {
             for (int j = 0; j < STRIDE; ++j)
