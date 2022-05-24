@@ -52,8 +52,8 @@ __global__ void sgemm(int m, int n, int k, float *a, int lda, float *b, int ldb,
     int _n = bx*128 + tx*8;
 
     int threadNo = ty * 16 + tx; 
-    int aindex = by*m*128 + threadNo*4/ 8*m + (threadNo*4)%8 ;//a:128*8 ;
-    int bindex = bx*128 + threadNo*4/ 128*k + (threadNo*4)%128; // b:8*128; 
+    int aindex = by*k*128 + threadNo*4/ 8*k + (threadNo*4)%8 ;//a:128*8 ;
+    int bindex = bx*128 + threadNo*4/ 128*n + (threadNo*4)%128; // b:8*128; 
     float sum[8][8] = {0.f};
     __shared__ __align__(16)  float ashare[1024];
     __shared__ __align__(16)  float bshare[1024];
