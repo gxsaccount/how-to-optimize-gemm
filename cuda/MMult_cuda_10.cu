@@ -15,6 +15,7 @@
 #define SMEM_LDB (128)
 
 // remove original guard
+//ptx指令: https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html 
 __device__ __forceinline__ void ldg32_nc_0(float &reg, const void *ptr) {
   asm volatile("{.reg .pred p;\n"
                "mov.b32 %0, 0;\n"
