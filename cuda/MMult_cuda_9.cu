@@ -151,18 +151,6 @@ __global__ __launch_bounds__(256, 2) void sgemm_128x128x8(int m, int n, int k,
 
   for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < 4; ++j) {
-      IF_  
-printf("c index:[%d,%d,%d,%d]\n",\
-write_offset + i * n + j,\
-write_offset + i * n + j + 64,\
-write_offset + (i + 64) * n + j,\
-write_offset + (i + 64) * n + j + 64);
-      // if(write_offset + i * n + j ==64) printf("[%d,%d,%d,%d]",blockIdx.x,blockIdx.y,threadIdx.x,threadIdx.y);
-      // if(write_offset + i * n + j + 64 ==64) printf("[%d,%d,%d,%d]",blockIdx.x,blockIdx.y,threadIdx.x,threadIdx.y);
-      // if(write_offset + i * n + j ==64) printf("[%d,%d,%d,%d]",blockIdx.x,blockIdx.y,threadIdx.x,threadIdx.y);
-      // if(write_offset + i * n + j ==64) printf("[%d,%d,%d,%d]",blockIdx.x,blockIdx.y,threadIdx.x,threadIdx.y);
-
-
       c[write_offset + i * n + j] = sum[i][j];
       c[write_offset + i * n + j + 64] = sum[i][j + 4];
       c[write_offset + (i + 64) * n + j] = sum[i + 4][j];
